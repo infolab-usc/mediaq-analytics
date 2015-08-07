@@ -14,7 +14,11 @@ import matplotlib.pyplot as plt
 from math import atan2, degrees, pi
 
 
-sys.path.append('../../../../../../_Research/_Crowdsourcing/DisasterResponse/BDR/')
+sys.path.append('/Users/ubriela/Dropbox/_USC/_Research/_Crowdsourcing/DisasterResponse/BDR/src/bdr/')
+from FOV import FOV
+from Params import Params
+from UtilsBDR import mbr_to_cellids, cell_coord, distance_km
+
 
 url = "http://mediaq.usc.edu/MediaQ_MVC_V3/api"
 validate_endpoint = 'http://geojsonlint.com/validate'
@@ -49,45 +53,6 @@ class SpatialEvent(Event):
 
     def __init__(self, start, end, min, max, pos_min, pos_max):
         Event.__init__(self, start, end)
-
-def distance_km(lat1, lon1, lat2, lon2):
-    """
-    Distance between two geographical locations
-    """
-    R = 6371  # km
-    dLat = math.radians(abs(lat2 - lat1))
-    dLon = math.radians(abs(lon2 - lon1))
-    lat1 = math.radians(lat1)
-    lat2 = math.radians(lat2)
-
-    a = math.sin(dLat / 2) * math.sin(dLat / 2) + math.sin(dLon / 2) * math.sin(dLon / 2) * math.cos(lat1) * math.cos(
-        lat2)
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    d = R * c
-    return d
-
-
-def angle_bwn_two_points(lat1,lng1,lat2,lng2):
-    dx = lat2 - lat1
-    dy = lng2 - lng1
-    rads = atan2(-dy,dx)
-    # rads %= 2*pi
-    rads += pi/2.0;
-    return degrees(rads)
-# print angle_bwn_two_points(0,0,1,-1)
-
-"""
-Check if a point inside a circle sector
-"""
-def within_circular(plat, plng, lat, lng, dir, radius):
-    angle = angle_bwn_two_points(lat, lng, plat, plng)
-    distance = distance_km(lat, lng, plat, plng)
-    print angle, distance
-    if abs(angle - dir) < 30 and distance < radius:
-        return True
-    else:
-        return False
-# print within_circular(34.024734, -118.284988,34.018212,-118.291716,45,1)
 
 
 
@@ -216,7 +181,7 @@ def getVideos(swlat=34.018212, swlng=-118.291716, nelat=34.025296, nelng=-118.27
     # Returns a set of video locations that are captured within a time interval (startdate -> enddate)
     # swlat=34.018212, swlng=-118.291716,nelat=34.025296, nelng=-118.279826,startdate="2014-04-13 00:00:00",enddate="2014-04-13 23:59:59"
     # swlat=34.019972, swlng=-118.291588, nelat=34.021111, nelng=-118.287125
-    fc_videos = geoq.rectangle_query(swlat, swlng, nelat, nelng)
+    fc_videos = geoq.rectangle_query(swlat, swlng, nelat, nelng, startdate="2014-04-12 00:00:00",enddate="2014-04-13 23:59:59")
     fc_videos = fc_videos.replace('None','null').replace('u\'','\"').replace('\'','\"')
 
     # print fc_videos
@@ -293,7 +258,7 @@ def detect_events(video):
 
         if fovs and len(fovs) > 0:
             # print vid
-            trajectory = [(fov.geometry.coordinates[0],fov.geometry.coordinates[0],float(fov.properties['theta_x'])) for fov in fovs.features]
+            trajectory = [(fov.geometry.coordinates[0],fov.geometry.coordinates[1],float(fov.properties['theta_x'])) for fov in fovs.features]
             dirs = [dir[2] for dir in trajectory]
             locs = [(dir[0], dir[1]) for dir in trajectory]
             #print dirs
@@ -341,15 +306,51 @@ def dump_metadata_dataset(filename = "mediaq_fovs.txt"):
 
     file.close()
 
+def compute_coverage_map(grid_size = 200):
+    swlat=34.018212
+    swlng=-118.291716
+    nelat=34.025296
+    nelng=-118.279826
+    videos = getVideos(swlat, swlng, nelat, nelng)
+
+    map = np.ndarray(shape=(grid_size, grid_size), dtype=int)
+    for video in videos:
+        if video.properties['vid']:
+            vid = str(video.properties['vid'])
+            fovs = getFOVs(vid)
+
+            if fovs and len(fovs) > 0:
+                for fov in fovs.features:
+                    f = FOV(fov)
+                    param = Params(1000, swlat, swlng, nelat, nelng)
+                    param.GRID_SIZE = grid_size
+                    for cid in f.cellids(param):
+                        cell_lat, cell_lng = cell_coord(cid, param)
+                        if f.cover(cell_lat, cell_lng):
+                            y_idx = cid/param.GRID_SIZE
+                            x_idx = cid - y_idx*param.GRID_SIZE
+                            # print x_idx, y_idx, map[x_idx][y_idx]
+                            map[x_idx][y_idx] = map[x_idx][y_idx] + 1
+
+
+    fig, ax = plt.subplots()
+    heatmap = ax.pcolor(map, cmap=plt.cm.Blues)
+    plt.show()
+    np.savetxt("mediaq_coverage_heatmap.txt" , map, fmt='%i\t')
+
+
+
 
 # dump_metadata_dataset()
 
-start = time.time()
-videos = getVideos()
-print time.time() - start
+# start = time.time()
+# videos = getVideos()
+# print time.time() - start
 
 # for video in videos:
 #     detect_events(video)
+
+compute_coverage_map()
 
 
 
