@@ -344,13 +344,12 @@ def compute_coverage_map(grid_size = 200):
 # dump_metadata_dataset()
 
 # start = time.time()
-# videos = getVideos()
+videos = getVideos()
 # print time.time() - start
 
-# for video in videos:
-#     detect_events(video)
+for video in videos:
+    detect_events(video)
 
-compute_coverage_map()
-
+# compute_coverage_map()
 
 
