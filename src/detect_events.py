@@ -7,9 +7,16 @@ import requests
 import json
 import sys
 import math
+import re
+import numpy as np
+import time
+import matplotlib.pyplot as plt
+from math import atan2, degrees, pi
 
 
-url = "http://local.eclipse.org/MediaQ_MVC_V3/api"
+sys.path.append('../../../../../../_Research/_Crowdsourcing/DisasterResponse/BDR/')
+
+url = "http://mediaq.usc.edu/MediaQ_MVC_V3/api"
 validate_endpoint = 'http://geojsonlint.com/validate'
 
 # An abstract event
@@ -59,6 +66,31 @@ def distance_km(lat1, lon1, lat2, lon2):
     d = R * c
     return d
 
+
+def angle_bwn_two_points(lat1,lng1,lat2,lng2):
+    dx = lat2 - lat1
+    dy = lng2 - lng1
+    rads = atan2(-dy,dx)
+    # rads %= 2*pi
+    rads += pi/2.0;
+    return degrees(rads)
+# print angle_bwn_two_points(0,0,1,-1)
+
+"""
+Check if a point inside a circle sector
+"""
+def within_circular(plat, plng, lat, lng, dir, radius):
+    angle = angle_bwn_two_points(lat, lng, plat, plng)
+    distance = distance_km(lat, lng, plat, plng)
+    print angle, distance
+    if abs(angle - dir) < 30 and distance < radius:
+        return True
+    else:
+        return False
+# print within_circular(34.024734, -118.284988,34.018212,-118.291716,45,1)
+
+
+
 SPATIAL_DISTANCE = 0.001    # km
 SPATIAL_MIN_LENGTH = 20
 
@@ -79,7 +111,7 @@ def events_by_locality(dirs):
 
 
 DIRECTIONAL_RANGE = 10
-MIN_LENGTH = 10
+MIN_LENGTH = 50
 def events_by_direction(dirs):
     results = []
     for i in range(len(dirs)):
@@ -137,7 +169,31 @@ def events_by_direction(dirs):
 # for s in results:
 #     print s
 
+"""
+1.5GB --> 1500
+1.5MB --> 1.5
+250K --> 0.25
+"""
+def size_in_mb(size):
+    if size:
+        value = re.sub("[^0-9.]", "", size)
+        unit = re.sub("[^a-zA-z]", "", size)
 
+        if unit == "B":
+            return float(value) * 0.000001
+        if unit == "K":
+            return float(value)  * 0.001
+        elif unit == "M":
+            return float(value)
+        elif unit == "G":
+            return float(value) * 1000
+        elif unit == "T":
+            return float(value) * 1000000
+        else:
+            return None
+    else:
+        return None
+# print size_in_mb("100.5M")
 
 # Create geoq client api
 geoq = sm.GeoqApi(sm.ApiClient(url))
@@ -152,53 +208,148 @@ geoq = sm.GeoqApi(sm.ApiClient(url))
 # Replace KEY_VALUE by actual one
 geoq = sm.GeoqApi(sm.ApiClient(url, "X-API-KEY", "8b51UFM2SlBltx3s6864eUO1zSoefeK5"))
 
-# Returns a set of video locations
-#geoq.rectangle_query(swlat=34.019972,swlng=-118.291588,nelat=34.021111,nelng=-118.287125)
+def getVideos(swlat=34.018212, swlng=-118.291716, nelat=34.025296, nelng=-118.279826):
 
-# Returns a set of video locations that are captured within a time interval (startdate -> enddate)
-# swlat=34.018212, swlng=-118.291716,nelat=34.025296, nelng=-118.279826,startdate="2014-04-13 00:00:00",enddate="2014-04-13 23:59:59"
-# swlat=34.019972, swlng=-118.291588, nelat=34.021111, nelng=-118.287125
-fc_videos = geoq.rectangle_query(swlat=34.018212, swlng=-118.291716, nelat=34.025296, nelng=-118.279826, startdate="2014-04-12 10:00:00",enddate="2014-04-13 23:59:59")
-fc_videos = fc_videos.replace('u\'','\"').replace('\'','\"')
+    # Returns a set of video locations
+    # http://mediaq.usc.edu/MediaQ_MVC_V3/api/geoq/rectangle_query?swlat=34.018212&swlng=-118.291716&nelat=34.025296&nelng=-118.279826&X-API-KEY=REAL_KEY&X-API-KEY=8b51UFM2SlBltx3s6864eUO1zSoefeK5
 
-# validate GEOJSON
-geojson_validation = requests.post(validate_endpoint, data=fc_videos)
-if geojson_validation.json()['status'] != 'ok':
-    print "Rectangle_query: Invalid geojson format"
-    exit()
+    # Returns a set of video locations that are captured within a time interval (startdate -> enddate)
+    # swlat=34.018212, swlng=-118.291716,nelat=34.025296, nelng=-118.279826,startdate="2014-04-13 00:00:00",enddate="2014-04-13 23:59:59"
+    # swlat=34.019972, swlng=-118.291588, nelat=34.021111, nelng=-118.287125
+    fc_videos = geoq.rectangle_query(swlat, swlng, nelat, nelng)
+    fc_videos = fc_videos.replace('None','null').replace('u\'','\"').replace('\'','\"')
 
-fc_videos = geojson.loads(fc_videos)
-print "Number of videos: " + str(len(fc_videos.features))
-for video in fc_videos.features:
+    # print fc_videos
+
+    # validate GEOJSON
+    geojson_validation = requests.post(validate_endpoint, data=fc_videos)
+    if geojson_validation.json()['status'] != 'ok':
+        print "Rectangle_query: Invalid geojson format"
+        exit()
+
+    fc_videos = geojson.loads(fc_videos)
+    print "Number of videos: " + str(len(fc_videos.features))
+    fov_counts = []
+    video_sizes = []
+    valid_fc_videos = [] # with video of size > 0
+    for video in fc_videos.features:
+        fov_counts.append(video.properties['fov_count'])
+        size = size_in_mb(video.properties['size'])
+        if size and size > 0:
+            valid_fc_videos.append(video)
+            video_sizes.append(size)
+
+    print "Total/Mean video size (M): " + str(sum(video_sizes)) + "/" + str(np.mean(video_sizes))
+    bins = range(0,100,10)
+    hist_video_counts = np.histogram(video_sizes, bins)[0]
+    print "Histogram:" + str(hist_video_counts)
+
+    # the histogram of the data
+    plt.hist(video_sizes, bins=bins)
+    plt.xlabel('Range (MB)')
+    plt.ylabel('Video Count')
+    plt.title(r'$\mathrm{Histogram\ of\ Video\ Size}$')
+    # plt.axis([0, 100, 0, 500])
+    plt.grid(True)
+    # plt.show()
+
+    print "Total/Mean FOV count: " + str(sum(fov_counts)) + "/" + str(np.mean(fov_counts))
+    bins = range(0,200,20)
+    hist_fov_counts = np.histogram(fov_counts, bins)[0]
+    print "Histogram:" + str(hist_fov_counts)
+
+    # the histogram of the data
+    plt.hist(fov_counts, bins=bins)
+    plt.xlabel('Range (Number of Frames)')
+    plt.ylabel('Frame Count')
+    plt.title(r'$\mathrm{Histogram\ of\ Frame\ Count}$')
+    # plt.axis([0, 100, 0, 500])
+    plt.grid(True)
+    # plt.show()
+
+    return valid_fc_videos
+
+def getFOVs(vid):
+    fovs = []
+    # Returns a set of video frames
+    try:
+        fovs = geoq.video_metadata(vid).replace('None','null').replace('u\'','\"').replace('\'','\"')
+        geojson_validation = requests.post(validate_endpoint, data=fovs)
+        if geojson_validation.json()['status'] != 'ok':
+            print "Video_metadata: Invalid geojson format"
+        fovs = geojson.loads(fovs)
+    except Exception as inst:
+        print vid
+        print inst
+        print "Unexpected error:", sys.exc_info()[0]
+
+    return fovs
+
+def detect_events(video):
     if video.properties['vid']:
         vid = str(video.properties['vid'])
-	videoid = str(video.properties['videoid'])
-        fovs = []
-        # Returns a set of video frames
-        try:
-            fovs = geoq.video_metadata(vid).replace('u\'','\"').replace('\'','\"')
-            geojson_validation = requests.post(validate_endpoint, data=fovs)
-            if geojson_validation.json()['status'] != 'ok':
-                print "Video_metadata: Invalid geojson format"
-            fovs = geojson.loads(fovs)
-        except Exception as inst:
-            print vid
-            print inst
-            print "Unexpected error:", sys.exc_info()[0]
+        videoid = str(video.properties['videoid'])
+        fovs = getFOVs(vid)
 
-        if fovs:
+        if fovs and len(fovs) > 0:
             # print vid
             trajectory = [(fov.geometry.coordinates[0],fov.geometry.coordinates[0],float(fov.properties['theta_x'])) for fov in fovs.features]
             dirs = [dir[2] for dir in trajectory]
             locs = [(dir[0], dir[1]) for dir in trajectory]
-	        #print dirs
-            # results = events_by_direction(dirs)
-            # for s in results:
-            #     print len(dirs), s
-                # print geoq.video_segment_url(vid, s.start, s.end)
-
-
-            results = events_by_locality(locs)
+            #print dirs
+            results = events_by_direction(dirs)
             for s in results:
-                print s
+                print len(dirs), videoid, s, dirs[s.start:s.end]
                 print geoq.video_segment_url(vid, s.start, s.end)
+
+
+            # results = events_by_locality(locs)
+            # for s in results:
+            #     print s
+            #     print geoq.video_segment_url(vid, s.start, s.end)
+
+
+def test_detect_events(fc_videos):
+    for video in fc_videos:
+        detect_events(video)
+
+
+def dump_metadata_dataset(filename = "mediaq_fovs.txt"):
+
+    file = open(filename,"w")
+
+    videos = getVideos()
+    videoidx = 1
+    for video in videos:
+        # vid,videoid,fovnum,Plat,Plng,Px,Py,prevX,prevY,speed,dir,prevDir,R,alpha,timestamp
+        vid = str(video.properties['vid'])
+
+        fovs = getFOVs(vid)
+        # print vid, fovs
+        if fovs and len(fovs) > 0:
+            for fov in fovs.features:
+                plat = fov.geometry.coordinates[1]
+                plng = fov.geometry.coordinates[0]
+                dir = float(fov.properties['theta_x'])
+                R = float(fov.properties['r']) * 200
+                alpha = float(fov.properties['alpha'])
+                fov_num = int(fov.properties['fov_num'])
+                timestamp = None
+                line = " ".join(map(str, [vid, videoidx, fov_num, plat, plng, None, None, None, None, None, dir, None, R, alpha, timestamp]))
+                file.write(line + "\n")
+        videoidx = videoidx + 1
+
+    file.close()
+
+
+# dump_metadata_dataset()
+
+start = time.time()
+videos = getVideos()
+print time.time() - start
+
+# for video in videos:
+#     detect_events(video)
+
+
+
