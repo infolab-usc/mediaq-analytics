@@ -75,8 +75,8 @@ def events_by_locality(dirs):
     return results
 
 
-DIRECTIONAL_RANGE = 10
-MIN_LENGTH = 50
+DIRECTIONAL_RANGE = 15
+MIN_LENGTH = 40
 def events_by_direction(dirs):
     results = []
     for i in range(len(dirs)):
@@ -181,7 +181,7 @@ def getVideos(swlat=34.018212, swlng=-118.291716, nelat=34.025296, nelng=-118.27
     # Returns a set of video locations that are captured within a time interval (startdate -> enddate)
     # swlat=34.018212, swlng=-118.291716,nelat=34.025296, nelng=-118.279826,startdate="2014-04-13 00:00:00",enddate="2014-04-13 23:59:59"
     # swlat=34.019972, swlng=-118.291588, nelat=34.021111, nelng=-118.287125
-    fc_videos = geoq.rectangle_query(swlat, swlng, nelat, nelng, startdate="2014-04-12 00:00:00",enddate="2014-04-13 23:59:59")
+    fc_videos = geoq.rectangle_query(swlat, swlng, nelat, nelng)
     fc_videos = fc_videos.replace('None','null').replace('u\'','\"').replace('\'','\"')
 
     # print fc_videos
@@ -262,16 +262,16 @@ def detect_events(video):
             dirs = [dir[2] for dir in trajectory]
             locs = [(dir[0], dir[1]) for dir in trajectory]
             #print dirs
-            results = events_by_direction(dirs)
-            for s in results:
-                print len(dirs), videoid, s, dirs[s.start:s.end]
-                print geoq.video_segment_url(vid, s.start, s.end)
-
-
-            # results = events_by_locality(locs)
+            # results = events_by_direction(dirs)
             # for s in results:
-            #     print s
+            #     # print len(dirs), videoid, s, dirs[s.start:s.end]
             #     print geoq.video_segment_url(vid, s.start, s.end)
+
+
+            results = events_by_locality(locs)
+            for s in results:
+                # print s
+                print geoq.video_segment_url(vid, s.start, s.end)
 
 
 def test_detect_events(fc_videos):
@@ -279,6 +279,9 @@ def test_detect_events(fc_videos):
         detect_events(video)
 
 
+"""
+Dump mediaq's FOV data in CSV format
+"""
 def dump_metadata_dataset(filename = "mediaq_fovs.txt"):
 
     file = open(filename,"w")
