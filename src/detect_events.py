@@ -13,12 +13,10 @@ import time
 import matplotlib.pyplot as plt
 from math import atan2, degrees, pi
 
-
-sys.path.append('/Users/ubriela/Dropbox/_USC/_Research/_Crowdsourcing/DisasterResponse/BDR/src/bdr/')
+sys.path.append('/Users/ubriela/git/BDR/src/bdr/')
 from FOV import FOV
 from Params import Params
 from UtilsBDR import mbr_to_cellids, cell_coord, distance_km
-
 
 url = "http://mediaq.usc.edu/MediaQ_MVC_V3/api"
 validate_endpoint = 'http://geojsonlint.com/validate'
@@ -49,35 +47,39 @@ class DirectionalEvent(Event):
         self.pos_min = pos_min
         self.pos_max = pos_max
 
-class SpatialEvent(Event):
+# A stopping event
+class StoppingEvent(Event):
 
     def __init__(self, start, end, min, max, pos_min, pos_max):
         Event.__init__(self, start, end)
 
 
+STOPPING_MAX_DISTANCE = 0.001    # km
+STOPPING_MIN_LENGTH = 20     # seconds
 
-SPATIAL_DISTANCE = 0.001    # km
-SPATIAL_MIN_LENGTH = 20
-
-def events_by_locality(dirs):
+def search_stopping_events(locs):
     results = []
-    for i in range(len(dirs)):
-        curr = dirs[i]
+    for i in range(len(locs)):
+        curr = locs[i]
         if i == 0:
             event = Event(0, 0)   # (start, end)
-        elif distance_km(dirs[event.start][0], dirs[event.start][1], curr[0], curr[1]) <= SPATIAL_DISTANCE:    # within range
+        elif distance_km(locs[event.start][0], locs[event.start][1], curr[0], curr[1]) <= STOPPING_MAX_DISTANCE:    # within range
             event.end = i         # update end
         else:   # new range
-            if event.end - event.start >= SPATIAL_MIN_LENGTH:
+            if event.end - event.start >= STOPPING_MIN_LENGTH:
                 results.append(event)
             # new event
             event = Event(i, i)
     return results
 
 
-DIRECTIONAL_RANGE = 15
-MIN_LENGTH = 40
-def events_by_direction(dirs):
+DIRECTIONAL_RANGE = 15      # degree
+DIRECTIONAL_MIN_LENGTH = 40
+
+"""
+Search directional events
+"""
+def search_directional_events(dirs):
     results = []
     for i in range(len(dirs)):
         curr = dirs[i]
@@ -90,7 +92,7 @@ def events_by_direction(dirs):
         elif sequence.max < curr <= sequence.min + DIRECTIONAL_RANGE:
             sequence.end, sequence.max, sequence.pos_max = i, curr, i  # update max, pos_max
         elif sequence.min - DIRECTIONAL_RANGE < curr < sequence.max - DIRECTIONAL_RANGE:
-            if sequence.end - sequence.start >= MIN_LENGTH - 1:  # direction event is detected
+            if sequence.end - sequence.start >= DIRECTIONAL_MIN_LENGTH - 1:  # direction event is detected
                 results.append(sequence)
             # update max
             pos_max = i
@@ -104,7 +106,7 @@ def events_by_direction(dirs):
                     break
             sequence = DirectionalEvent(j + 1, i, curr, max, i, pos_max)
         elif sequence.min + DIRECTIONAL_RANGE < curr < sequence.max + DIRECTIONAL_RANGE:
-            if sequence.end - sequence.start >= MIN_LENGTH - 1:  # direction event is detected
+            if sequence.end - sequence.start >= DIRECTIONAL_MIN_LENGTH - 1:  # direction event is detected
                 results.append(sequence)
             # update min
             pos_min = i
@@ -119,7 +121,7 @@ def events_by_direction(dirs):
             sequence = DirectionalEvent(j + 1, i, min, curr, pos_min, i)
 
         elif curr <= sequence.min - DIRECTIONAL_RANGE or curr >= sequence.max + DIRECTIONAL_RANGE:    # out of range
-            if sequence.end - sequence.start >= MIN_LENGTH - 1:  # direction event is detected
+            if sequence.end - sequence.start >= DIRECTIONAL_MIN_LENGTH - 1:  # direction event is detected
                 results.append(sequence)
             sequence = DirectionalEvent(i, i, curr, curr, i, i)
 
@@ -171,16 +173,15 @@ geoq = sm.GeoqApi(sm.ApiClient(url))
 
 # Create geoq client with API key
 # Replace KEY_VALUE by actual one
+
 geoq = sm.GeoqApi(sm.ApiClient(url, "X-API-KEY", "8b51UFM2SlBltx3s6864eUO1zSoefeK5"))
 
-def getVideos(swlat=34.018212, swlng=-118.291716, nelat=34.025296, nelng=-118.279826):
 
-    # Returns a set of video locations
-    # http://mediaq.usc.edu/MediaQ_MVC_V3/api/geoq/rectangle_query?swlat=34.018212&swlng=-118.291716&nelat=34.025296&nelng=-118.279826&X-API-KEY=REAL_KEY&X-API-KEY=8b51UFM2SlBltx3s6864eUO1zSoefeK5
+"""
+Returns a set of video locations that are captured within a time interval (startdate -> enddate)
+"""
+def get_videos(swlat=34.018212, swlng=-118.291716, nelat=34.025296, nelng=-118.279826, startdate="2014-04-13 00:00:00", enddate="2014-04-13 23:59:59"):
 
-    # Returns a set of video locations that are captured within a time interval (startdate -> enddate)
-    # swlat=34.018212, swlng=-118.291716,nelat=34.025296, nelng=-118.279826,startdate="2014-04-13 00:00:00",enddate="2014-04-13 23:59:59"
-    # swlat=34.019972, swlng=-118.291588, nelat=34.021111, nelng=-118.287125
     fc_videos = geoq.rectangle_query(swlat, swlng, nelat, nelng)
     fc_videos = fc_videos.replace('None','null').replace('u\'','\"').replace('\'','\"')
 
@@ -194,11 +195,11 @@ def getVideos(swlat=34.018212, swlng=-118.291716, nelat=34.025296, nelng=-118.27
 
     fc_videos = geojson.loads(fc_videos)
     print "Number of videos: " + str(len(fc_videos.features))
-    fov_counts = []
+    # fov_counts = []
     video_sizes = []
     valid_fc_videos = [] # with video of size > 0
     for video in fc_videos.features:
-        fov_counts.append(video.properties['fov_count'])
+        # fov_counts.append(video.properties['fov_count'])
         size = size_in_mb(video.properties['size'])
         if size and size > 0:
             valid_fc_videos.append(video)
@@ -218,16 +219,16 @@ def getVideos(swlat=34.018212, swlng=-118.291716, nelat=34.025296, nelng=-118.27
     plt.grid(True)
     # plt.show()
 
-    print "Total/Mean FOV count: " + str(sum(fov_counts)) + "/" + str(np.mean(fov_counts))
-    bins = range(0,200,20)
-    hist_fov_counts = np.histogram(fov_counts, bins)[0]
-    print "Histogram:" + str(hist_fov_counts)
+    # print "Total/Mean FOV count: " + str(sum(fov_counts)) + "/" + str(np.mean(fov_counts))
+    # bins = range(0,200,20)
+    # hist_fov_counts = np.histogram(fov_counts, bins)[0]
+    # print "Histogram:" + str(hist_fov_counts)
 
     # the histogram of the data
-    plt.hist(fov_counts, bins=bins)
-    plt.xlabel('Range (Number of Frames)')
-    plt.ylabel('Frame Count')
-    plt.title(r'$\mathrm{Histogram\ of\ Frame\ Count}$')
+    # plt.hist(fov_counts, bins=bins)
+    # plt.xlabel('Range (Number of Frames)')
+    # plt.ylabel('Frame Count')
+    # plt.title(r'$\mathrm{Histogram\ of\ Frame\ Count}$')
     # plt.axis([0, 100, 0, 500])
     plt.grid(True)
     # plt.show()
@@ -250,7 +251,10 @@ def getFOVs(vid):
 
     return fovs
 
-def detect_events(video):
+"""
+Search for various kinds of events, e.g., stopping,
+"""
+def search_events(video):
     if video.properties['vid']:
         vid = str(video.properties['vid'])
         videoid = str(video.properties['videoid'])
@@ -261,32 +265,25 @@ def detect_events(video):
             trajectory = [(fov.geometry.coordinates[0],fov.geometry.coordinates[1],float(fov.properties['theta_x'])) for fov in fovs.features]
             dirs = [dir[2] for dir in trajectory]
             locs = [(dir[0], dir[1]) for dir in trajectory]
-            #print dirs
-            # results = events_by_direction(dirs)
-            # for s in results:
-            #     # print len(dirs), videoid, s, dirs[s.start:s.end]
-            #     print geoq.video_segment_url(vid, s.start, s.end)
 
-
-            results = events_by_locality(locs)
+            results = search_directional_events(dirs)
             for s in results:
-                # print s
                 print geoq.video_segment_url(vid, s.start, s.end)
 
 
-def test_detect_events(fc_videos):
-    for video in fc_videos:
-        detect_events(video)
+            # results = search_stopping_events(locs)
+            # for s in results:
+            #     print geoq.video_segment_url(vid, s.start, s.end)
 
 
 """
 Dump mediaq's FOV data in CSV format
 """
-def dump_metadata_dataset(filename = "mediaq_fovs.txt"):
+def dump_mediaq_metadata(filename = "mediaq_fovs.txt"):
 
     file = open(filename,"w")
 
-    videos = getVideos()
+    videos = get_videos()
     videoidx = 1
     for video in videos:
         # vid,videoid,fovnum,Plat,Plng,Px,Py,prevX,prevY,speed,dir,prevDir,R,alpha,timestamp
@@ -309,12 +306,15 @@ def dump_metadata_dataset(filename = "mediaq_fovs.txt"):
 
     file.close()
 
+"""
+Compute coverage map (2D histogram)
+"""
 def compute_coverage_map(grid_size = 200):
     swlat=34.018212
     swlng=-118.291716
     nelat=34.025296
     nelng=-118.279826
-    videos = getVideos(swlat, swlng, nelat, nelng)
+    videos = get_videos(swlat, swlng, nelat, nelng)
 
     map = np.ndarray(shape=(grid_size, grid_size), dtype=int)
     for video in videos:
@@ -344,14 +344,14 @@ def compute_coverage_map(grid_size = 200):
 
 
 
-# dump_metadata_dataset()
+dump_mediaq_metadata()
 
 # start = time.time()
-videos = getVideos()
+videos = get_videos()
 # print time.time() - start
 
 for video in videos:
-    detect_events(video)
+    search_events(video)
 
 # compute_coverage_map()
 
