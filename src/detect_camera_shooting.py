@@ -841,6 +841,8 @@ def search_scenes(video, type, MIN_DURATION, ANGLE_THRESHOLD):
     elif type == "pan":
         results = search_pan_scenes(locs, dirs, MIN_DURATION, ANGLE_THRESHOLD, MAX_RADIUS)
 
+    if len(results) >= 1:
+        print video.id
     return len(results)
     
     # for s in results:
@@ -937,9 +939,9 @@ print time.time() - start
 
 
 # min_duration = [5,10,15,20,25,30,35,40,45,50,55,60]
-min_duration = [15]
+min_duration = [20]
 # angle_threshold = [5,10,15,20,25,30,35,40,45]
-angle_threshold = [15]
+angle_threshold = [10]
 # angle_threshold = [60, 90,120,150,180,210,240,270,300]
 
 # tracking scenes
@@ -977,5 +979,5 @@ if TEST:
     np.savetxt(type + "_scenes.txt" , scenes, fmt='%.4f\t')
 print time.time() - start
 
-compute_coverage_map()
+# compute_coverage_map()
 
